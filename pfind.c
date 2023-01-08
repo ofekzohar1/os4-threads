@@ -14,7 +14,7 @@
 #define PARENT_DIR ".."
 #define CURR_DIR "."
 #define SUCCESS 0
-#define FAILURE -1
+#define FAILURE (-1)
 
 struct qnode {
     void *value;
@@ -164,6 +164,7 @@ int thread_search(void *t) {
                     cnd_signal(deq_node->value);
                     free(deq_node);
                 }
+                printf("Qthreads len 1: %d.\n", qthreads->len);
                 break;
             }
             q_status = enqueue(qthreads, &thread_cnd);
@@ -273,12 +274,7 @@ int main(int argc, char *argv[]) {
     mtx_destroy(&qdir_mutex);
     cnd_destroy(&start_cnd);
     cnd_destroy(&qdir_cnd);
-//    node = qdir->head;
-//    while (node != NULL) {
-//        qdir->head = node->next;
-//        free(node);
-//        node = qdir->head;
-//    }
+    printf("Qthreads len 2: %d.\n", qthreads->len);
     node = qthreads->head;
     while (node != NULL) {
         qthreads->head = node->next;
