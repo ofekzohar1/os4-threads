@@ -26,7 +26,7 @@ struct queue {
 } typedef queue;
 
 int enqueue(queue *q, void *value) {
-    qnode * node = (qnode *) malloc(sizeof(qnode));
+    qnode *node = (qnode *) malloc(sizeof(qnode));
     if (node == NULL) {
         fprintf(stderr, "qnode allocation fail: %s\n", strerror(ENOMEM));
         return -1;
@@ -46,11 +46,11 @@ int enqueue(queue *q, void *value) {
     return 0;
 }
 
-int dequeue(queue *q, qnode *node) {
+int dequeue(queue *q, qnode **node) {
     if (q->head == NULL) // Empty
         return -1;
-    node = q->head;
-    q->head = node->next;
+    *node = q->head;
+    q->head = (*node)->next;
     q->len--;
     return 0;
 }
@@ -119,7 +119,7 @@ int search(char *path) {
             mtx_lock(&qdir_mutex);
             if (enqueue_dir(qdir, new_path) == -1) { // Enqueue fail
                 exit_status = EXIT_FAILURE;
-            } else if(dequeue(qthreads, thread_node) != -1) { // New dir enqueued and there is a thread waiting
+            } else if(dequeue(qthreads, &thread_node) != -1) { // New dir enqueued and there is a thread waiting
                 cnd_signal(thread_node->value);
                 free(thread_node);
             }
@@ -130,6 +130,7 @@ int search(char *path) {
         }
     }
     if (errno != 0) exit_status = EXIT_FAILURE;
+    closedir(search_dir);
 
     return exit_status;
 }
@@ -157,6 +158,10 @@ int thread_search(void *t) {
         while (keep_search && qdir->len == 0) {
             if (N_THREADS - qthreads->len - threads_failed == 1) { // This is the only live thread and qdir is empty
                 keep_search = 0;
+                while (dequeue(qthreads, &deq_node) != -1) { // Not empty
+                    cnd_signal(deq_node->value);
+                    free(deq_node);
+                }
                 break;
             }
             q_status = enqueue(qthreads, &thread_cnd);
@@ -171,7 +176,7 @@ int thread_search(void *t) {
             mtx_unlock(&qdir_mutex);
             break;
         }
-        if (dequeue(qdir, deq_node) == -1) {
+        if (dequeue(qdir, &deq_node) == -1) {
             fprintf(stderr, "Unexpected behavior on dequeue: %s\n", strerror(ENODATA));
             q_status = -1;
             exit_status = EXIT_FAILURE;
@@ -266,9 +271,6 @@ int main(int argc, char *argv[]) {
     cnd_destroy(&start_cnd);
     cnd_destroy(&qdir_cnd);
     free(qdir);
-    while (dequeue(qthreads, thread_node) != -1) { // Not empty
-        free(thread_node);
-    }
     free(qthreads);
     return exit_status;
 }
