@@ -234,6 +234,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Queue threads conds allocation fail: %s\n", strerror(ENOMEM));
         exit(EXIT_FAILURE);
     }
+    qthreads->head = qthreads->tail = NULL;
     qthreads->len=0;
 
     // Initialize mutex and condition variable objects
