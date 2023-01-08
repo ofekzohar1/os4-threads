@@ -198,7 +198,6 @@ int thread_search(void *t) {
 int main(int argc, char *argv[]) {
     int rc, status, exit_status;
     char *root_dir;
-    qnode *thread_node = NULL;
 
     if (argc != NUM_VALID_ARGS) {
         fprintf(stderr, "Number of passed arguments should be %d: %s.\n", NUM_VALID_ARGS - 1,
