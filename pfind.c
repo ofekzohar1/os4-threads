@@ -198,6 +198,7 @@ int thread_search(void *t) {
 int main(int argc, char *argv[]) {
     int rc, status, exit_status;
     char *root_dir;
+    qnode *node;
 
     if (argc != NUM_VALID_ARGS) {
         fprintf(stderr, "Number of passed arguments should be %d: %s.\n", NUM_VALID_ARGS - 1,
@@ -224,6 +225,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Queue directories allocation fail: %s\n", strerror(ENOMEM));
         exit(EXIT_FAILURE);
     }
+    qdir->head = qdir->tail = NULL;
     qdir->len=0;
     if (enqueue_dir(qdir, root_dir) == -1) {
         exit(EXIT_FAILURE);
@@ -270,6 +272,18 @@ int main(int argc, char *argv[]) {
     mtx_destroy(&qdir_mutex);
     cnd_destroy(&start_cnd);
     cnd_destroy(&qdir_cnd);
+    node = qdir->head;
+    while (node != NULL) {
+        qdir->head = node->next;
+        free(node);
+        node = qdir->head;
+    }
+    node = qthreads->head;
+    while (node != NULL) {
+        qthreads->head = node->next;
+        free(node);
+        node = qthreads->head;
+    }
     free(qdir);
     free(qthreads);
     return exit_status;
