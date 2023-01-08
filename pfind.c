@@ -101,8 +101,8 @@ int search(char *path) {
         fprintf(stderr, "Open %s fail: %s.\n", path, strerror(errno));
         return FAILURE;
     }
-    errno = 0;
-    while ((entry=readdir(search_dir)) != NULL) {
+
+    while (!(errno = 0) && (entry=readdir(search_dir)) != NULL) {
         if (!strcmp(entry->d_name, PARENT_DIR) || !strcmp(entry->d_name, CURR_DIR)) continue;
         if (sprintf(new_path, "%s/%s", path, entry->d_name) < 0) {
             fprintf(stderr, "Open %s fail: %s.\n", path, strerror(errno));
@@ -113,7 +113,7 @@ int search(char *path) {
         if (status == FAILURE) {
             ret_status = status;
             continue;
-        } else if(status == 1) { // Entry is a dir
+        } else if (status == 1) { // Entry is a dir
             if (access(new_path, SEARCH_PERMISSIONS) != SUCCESS) {
                 printf("Directory %s: Permission denied.\n", new_path);
                 continue;
