@@ -13,6 +13,8 @@
 #define SEARCH_PERMISSIONS (R_OK | X_OK)
 #define PARENT_DIR ".."
 #define CURR_DIR "."
+#define SUCCESS 0
+#define FAILURE -1
 
 struct qnode {
     void *value;
@@ -29,7 +31,7 @@ int enqueue(queue *q, void *value) {
     qnode *node = (qnode *) malloc(sizeof(qnode));
     if (node == NULL) {
         fprintf(stderr, "qnode allocation fail: %s\n", strerror(ENOMEM));
-        return -1;
+        return FAILURE;
     }
     node->value = value;
     node->next = NULL;
@@ -43,23 +45,23 @@ int enqueue(queue *q, void *value) {
         q->tail = node;
         q->len++;
     }
-    return 0;
+    return SUCCESS;
 }
 
 int dequeue(queue *q, qnode **node) {
     if (q->head == NULL) // Empty
-        return -1;
+        return FAILURE;
     *node = q->head;
     q->head = (*node)->next;
     q->len--;
-    return 0;
+    return SUCCESS;
 }
 
 int enqueue_dir(queue *queue, char *new_dir) {
     char *path = (char *) malloc(PATH_MAX);
     if (path == NULL) {
         fprintf(stderr, "path copy alloc fail: %s\n", strerror(ENOMEM));
-        return -1;
+        return FAILURE;
     }
     strcpy(path, new_dir);
 
@@ -81,7 +83,7 @@ int isDir(char *path) {
     int rc;
     struct stat st;
     rc = stat(path, &st);
-    if (rc != 0) {
+    if (rc != SUCCESS) {
         fprintf(stderr, "Stat function failed on path %s: %s.\n", path, strerror(errno));
         return rc;
     }
@@ -89,7 +91,7 @@ int isDir(char *path) {
 }
 //----------------------------------------------------------------------------
 int search(char *path) {
-    int exit_status = 0, status;
+    int ret_status = SUCCESS, status;
     struct dirent *entry;
     char new_path[PATH_MAX];
     qnode *thread_node = NULL;
@@ -97,29 +99,29 @@ int search(char *path) {
     DIR *search_dir = opendir(path);
     if (search_dir == NULL) { // Open fail
         fprintf(stderr, "Open %s fail: %s.\n", path, strerror(errno));
-        return EXIT_FAILURE;
+        return FAILURE;
     }
     errno = 0;
     while ((entry=readdir(search_dir)) != NULL) {
         if (!strcmp(entry->d_name, PARENT_DIR) || !strcmp(entry->d_name, CURR_DIR)) continue;
         if (sprintf(new_path, "%s/%s", path, entry->d_name) < 0) {
             fprintf(stderr, "Open %s fail: %s.\n", path, strerror(errno));
-            exit_status = EXIT_FAILURE;
+            ret_status = FAILURE;
             continue;
         }
         status = isDir(new_path);
-        if (status == -1) {
-            exit_status = EXIT_FAILURE;
+        if (status == FAILURE) {
+            ret_status = status;
             continue;
         } else if(status == 1) { // Entry is a dir
-            if (access(new_path, SEARCH_PERMISSIONS) != 0) {
+            if (access(new_path, SEARCH_PERMISSIONS) != SUCCESS) {
                 printf("Directory %s: Permission denied.\n", new_path);
                 continue;
             }
             mtx_lock(&qdir_mutex);
-            if (enqueue_dir(qdir, new_path) == -1) { // Enqueue fail
-                exit_status = EXIT_FAILURE;
-            } else if(dequeue(qthreads, &thread_node) != -1) { // New dir enqueued and there is a thread waiting
+            if (enqueue_dir(qdir, new_path) == FAILURE) { // Enqueue fail
+                ret_status = FAILURE;
+            } else if(dequeue(qthreads, &thread_node) != FAILURE) { // New dir enqueued and there is a thread waiting
                 cnd_signal(thread_node->value);
                 free(thread_node);
             }
@@ -129,16 +131,16 @@ int search(char *path) {
             printf("%s\n", new_path);
         }
     }
-    if (errno != 0) exit_status = EXIT_FAILURE;
+    if (errno != 0) ret_status = FAILURE;
     closedir(search_dir);
 
-    return exit_status;
+    return ret_status;
 }
 
 //----------------------------------------------------------------------------
 
 int thread_search(void *t) {
-    int status, exit_status = 0, q_status = 0;
+    int status, exit_status = SUCCESS, q_status = SUCCESS;
     qnode *deq_node = NULL;
     cnd_t thread_cnd;
     cnd_init(&thread_cnd);
@@ -158,34 +160,34 @@ int thread_search(void *t) {
         while (keep_search && qdir->len == 0) {
             if (N_THREADS - qthreads->len - threads_failed == 1) { // This is the only live thread and qdir is empty
                 keep_search = 0;
-                while (dequeue(qthreads, &deq_node) != -1) { // Not empty
+                while (dequeue(qthreads, &deq_node) != FAILURE) { // Not empty
                     cnd_signal(deq_node->value);
                     free(deq_node);
                 }
                 break;
             }
             q_status = enqueue(qthreads, &thread_cnd);
-            if (q_status == -1) { // Alloc fail
+            if (q_status == FAILURE) { // Alloc fail
                 exit_status = EXIT_FAILURE;
                 threads_failed++;
                 break;
             }
             cnd_wait(&thread_cnd, &qdir_mutex);
         }
-        if (q_status == -1 || !keep_search) { // Stop searching for this thread
+        if (q_status == FAILURE || !keep_search) { // Stop searching for this thread
             mtx_unlock(&qdir_mutex);
             break;
         }
-        if (dequeue(qdir, &deq_node) == -1) {
+        if (dequeue(qdir, &deq_node) == FAILURE) {
             fprintf(stderr, "Unexpected behavior on dequeue: %s\n", strerror(ENODATA));
-            q_status = -1;
+            q_status = FAILURE;
             exit_status = EXIT_FAILURE;
             threads_failed++;
         }
         mtx_unlock(&qdir_mutex);
-        if (q_status == -1) break; // Queue op fail
+        if (q_status == FAILURE) break; // Queue op fail
         status = search(deq_node->value);
-        if (status == -1) exit_status = EXIT_FAILURE;
+        if (status == FAILURE) exit_status = EXIT_FAILURE;
         free(deq_node->value);
         free(deq_node);
     }
@@ -196,7 +198,7 @@ int thread_search(void *t) {
 
 //----------------------------------------------------------------------------
 int main(int argc, char *argv[]) {
-    int rc, status, exit_status;
+    int rc, status, exit_status = SUCCESS;
     char *root_dir;
     qnode *node;
 
@@ -208,14 +210,14 @@ int main(int argc, char *argv[]) {
     N_THREADS = atoi(argv[3]);
     root_dir = argv[1];
     search_term = argv[2];
-    if (access(root_dir, SEARCH_PERMISSIONS) != 0) {
+    if (access(root_dir, SEARCH_PERMISSIONS) != SUCCESS) {
         fprintf(stderr, "Can't access root path %s: %s.\n", root_dir, strerror(errno));
         exit(EXIT_FAILURE);
     }
     rc = isDir(root_dir);
-    if (rc == -1)
+    if (rc == FAILURE)
         exit(EXIT_FAILURE);
-    else if (rc == 0) {
+    else if (rc == SUCCESS) {
         fprintf(stderr, "Root path %s isn't a directory: %s.\n", root_dir, strerror(ENOTDIR));
         exit(EXIT_FAILURE);
     }
@@ -227,7 +229,7 @@ int main(int argc, char *argv[]) {
     }
     qdir->head = qdir->tail = NULL;
     qdir->len=0;
-    if (enqueue_dir(qdir, root_dir) == -1) {
+    if (enqueue_dir(qdir, root_dir) == FAILURE) {
         exit(EXIT_FAILURE);
     }
 
@@ -258,11 +260,10 @@ int main(int argc, char *argv[]) {
     cnd_wait(&start_cnd, &start_mutex);
     mtx_unlock(&start_mutex);
 
-    exit_status = 0;
     // Wait for all threads to complete
     for (int i = 0; i < N_THREADS; i++) {
         thrd_join(threads[i], &status);
-        if (status != 0) exit_status = EXIT_FAILURE;
+        if (status != SUCCESS) exit_status = EXIT_FAILURE;
     }
 
     printf("Done searching, found %d files\n", search_appear);
@@ -272,12 +273,12 @@ int main(int argc, char *argv[]) {
     mtx_destroy(&qdir_mutex);
     cnd_destroy(&start_cnd);
     cnd_destroy(&qdir_cnd);
-    node = qdir->head;
-    while (node != NULL) {
-        qdir->head = node->next;
-        free(node);
-        node = qdir->head;
-    }
+//    node = qdir->head;
+//    while (node != NULL) {
+//        qdir->head = node->next;
+//        free(node);
+//        node = qdir->head;
+//    }
     node = qthreads->head;
     while (node != NULL) {
         qthreads->head = node->next;
