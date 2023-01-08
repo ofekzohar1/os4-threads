@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <threads.h>
-#include <time.h>
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
@@ -62,6 +61,7 @@ int enqueue_dir(queue *queue, char *new_dir) {
         fprintf(stderr, "path copy alloc fail: %s\n", strerror(ENOMEM));
         return -1;
     }
+    strcpy(path, new_dir);
 
     return enqueue(queue, (void *)path);
 }
@@ -91,8 +91,8 @@ int isDir(char *path) {
 int search(char *path) {
     int exit_status = 0, status;
     struct dirent *entry;
-    char new_path[PATH_MAX], *search_res;
-    qnode *thread_node;
+    char new_path[PATH_MAX];
+    qnode *thread_node = NULL;
 
     DIR *search_dir = opendir(path);
     if (search_dir == NULL) { // Open fail
@@ -193,7 +193,7 @@ int thread_search(void *t) {
 int main(int argc, char *argv[]) {
     int rc, status, exit_status;
     char *root_dir;
-    qnode *thread_node;
+    qnode *thread_node = NULL;
 
     if (argc != NUM_VALID_ARGS) {
         fprintf(stderr, "Number of passed arguments should be %d: %s.\n", NUM_VALID_ARGS - 1,
